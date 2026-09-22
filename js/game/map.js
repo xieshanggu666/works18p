@@ -103,6 +103,9 @@ FG.Map = class {
       // 统计
       totalCrafted: 0,
       craftedByItem: {},    // 按产物分项的累计完成次数（试产闸门按产物归属统计，切配方不串计）
+      // 设备磨损与维修
+      wear: 0,              // 累计磨损（0~寿命）；仅矿机/配方建筑积累，故障后检修归零
+      broken: false,        // 是否磨损故障停机（维修工单凑齐备件检修后恢复）
     };
     if (def.storage) {
       for (let i = 0; i < FG.Config.CHEST_SLOTS; i++) b.chest.push({ type: null, count: 0, cap: FG.Config.CHEST_SLOT_CAP });

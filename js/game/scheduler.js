@@ -73,6 +73,8 @@ FG.Scheduler = class Scheduler {
   }
 
   addConsumer(b) {
+    // 磨损故障停机：不再要料（其旧配方在途预留下一 tick 因 want 不匹配自动剥离释放）
+    if (b.broken) return;
     const wants = this.wantsOf(b);
     if (!wants) return;
     const c = {

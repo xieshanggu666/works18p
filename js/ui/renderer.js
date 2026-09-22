@@ -629,7 +629,18 @@ FG.Renderer = (() => {
     }
 
     // 状态覆盖层
-    if (game.showStatus && b.status) {
+    if (b.broken) {
+      // 磨损故障：红色覆盖 + ⚠ 角标；检修中叠加斜纹表示正在维修
+      const repairing = game.maintenance && game.maintenance.orderAt(b.x, b.y)
+        && game.maintenance.orderAt(b.x, b.y).repairTimer > 0;
+      ctx.fillStyle = repairing ? 'rgba(127,199,255,0.28)' : 'rgba(224,92,92,0.42)';
+      ctx.fillRect(px + 1, py + 1, t - 2, t - 2);
+      ctx.fillStyle = repairing ? '#bfe6ff' : '#ff8a7a';
+      ctx.font = 'bold 11px Consolas';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(repairing ? '🔧' : '⚠', cx, cy);
+      ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+    } else if (game.showStatus && b.status) {
       const col = b.status === 'starving' ? C().COLORS.overlayRed
         : b.status === 'blocked' ? C().COLORS.overlayOrange
         : b.status === 'working' ? C().COLORS.overlayGreen : null;
@@ -639,8 +650,20 @@ FG.Renderer = (() => {
       }
     }
 
-    // 生产进度条
-    if (b.recipe && b.status === 'working' && b.def.recipeBuilding) {
+    // 磨损指示：运转中的可磨损设备底部小磨损条（故障后由红色覆盖取代）
+    if (!b.broken && game.maintenance && FG.Maintenance.wears(b) && (b.wear || 0) > 0) {
+      const frac = game.maintenance.wearFraction(b);
+      if (frac > 0.02) {
+        const col = frac > 0.8 ? '#e05c5c' : frac > 0.5 ? '#e8a33d' : 'rgba(232,163,61,0.55)';
+        ctx.fillStyle = 'rgba(0,0,0,0.5)';
+        ctx.fillRect(px + 4, py + 3, t - 8, 2.4);
+        ctx.fillStyle = col;
+        ctx.fillRect(px + 4, py + 3, (t - 8) * frac, 2.4);
+      }
+    }
+
+    // 生产进度条（故障停机时不显示，由红色故障覆盖与维修条取代）
+    if (!b.broken && b.recipe && b.status === 'working' && b.def.recipeBuilding) {
       const r = FG.Recipes.byId(b.recipe);
       const p = Math.min(1, b.progress / r.time);
       ctx.fillStyle = 'rgba(0,0,0,0.5)';

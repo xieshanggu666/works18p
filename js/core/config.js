@@ -5,7 +5,7 @@
 window.FG = window.FG || {};
 
 FG.Config = {
-  VERSION: '1.9.0',
+  VERSION: '1.10.0',
 
   // 仿真节拍：每秒 20 tick
   TPS: 20,
@@ -54,6 +54,10 @@ FG.Config = {
   BP_MAX_AREA: 400,              // 框选蓝图的最大格数
   CONSTRUCT_BUILD_INTERVAL: 4,   // 施工计划相邻两栋建筑落成的 tick 间隔
   STAGE_TRIAL_COUNT: 3,          // 阶段「试产达标」默认需要的完成生产次数
+
+  // 设备磨损与维修（生产建筑随运转积累磨损，故障后按工单预留备件、停机检修）
+  MAINT_REPAIR_TICKS: 20,        // 备件凑齐后的停机检修时长（tick = 1 秒）
+  MAINT_DEFAULT_LIFE: 6000,      // 缺省磨损寿命（tick = 5 仿真分钟）
 
   // 一键流水线
   PIPELINE_SEARCH_RADIUS: 40,    // 智能选位螺旋搜索半径（格）

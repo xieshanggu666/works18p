@@ -428,6 +428,9 @@ FG.Sim = class Sim {
   // ================= 生产建筑 =================
   updateCrafters() {
     for (const b of this.crafters) {
+      // 磨损故障停机：不生产（维修工单备件凑齐检修后由 maintenance 解除）
+      if (b.broken) { b.status = this.game.maintenance && this.game.maintenance.orderAt(b.x, b.y)
+        && this.game.maintenance.orderAt(b.x, b.y).repairTimer > 0 ? 'repairing' : 'broken'; continue; }
       const recipe = b.recipe ? FG.Recipes.byId(b.recipe) : null;
       if (!recipe) { b.status = 'idle'; b.progress = 0; continue; }
       if (!this.game.research.isRecipeUnlocked(recipe.id)) { b.status = 'idle'; b.progress = 0; continue; }
@@ -491,6 +494,8 @@ FG.Sim = class Sim {
     // 4. 生产推进
     b.status = 'working';
     b.progress += def.craftSpeed || 1;
+    // 设备随运转积累磨损（达到寿命即故障停机、自动开工单；本 tick 已完成的生产照常结算）
+    if (this.game.maintenance) this.game.maintenance.accrue(b, 1);
     if (b.progress >= recipe.time) {
       b.progress = 0;
       for (const ing of recipe.ingredients) {
@@ -530,6 +535,12 @@ FG.Sim = class Sim {
   updateMiners() {
     const m = this.game.map;
     for (const b of this.miners) {
+      // 磨损故障停机：停止开采（维修工单检修完成后恢复）
+      if (b.broken) {
+        b.status = this.game.maintenance && this.game.maintenance.orderAt(b.x, b.y)
+          && this.game.maintenance.orderAt(b.x, b.y).repairTimer > 0 ? 'repairing' : 'broken';
+        continue;
+      }
       const ore = m.ores[b.y][b.x];
       if (!ore || ore.amount <= 0) { b.status = 'empty'; b.progress = 0; b.oreType = null; continue; }
       b.oreType = ore.type;
@@ -540,6 +551,8 @@ FG.Sim = class Sim {
       }
       b.status = 'working';
       b.progress++;
+      // 设备随运转积累磨损（堵料/枯竭的 tick 不推进 progress，故不计磨损）
+      if (this.game.maintenance) this.game.maintenance.accrue(b, 1);
       if (b.progress >= 20) {
         b.progress = 0;
         out.count++;

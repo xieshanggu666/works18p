@@ -848,6 +848,8 @@ FG.Construction = class Construction {
     if (nb.def.recipeBuilding) FG.Map.syncRecipeSlots(nb);
     if (g.selection === old) g.selection = nb;   // 选中态跟随新建筑
     g.absorbPile(nb);                    // 回收该格地面物料（如取消返还落在旧建筑脚下的建材）
+    // 设备磨损/维修衔接：新机磨损归零、非故障；撤销旧机未完工单并返还其预留备件
+    if (g.maintenance) g.maintenance.onUpgraded(old, nb);
     FG.Events.emit('building:placed', nb);
     return nb;
   }
@@ -867,18 +869,7 @@ FG.Construction = class Construction {
   }
 
   /** 把库存建材返还物流：优先放回箱子，放不下的落到 (x,y) 地面堆 */
-  refundToLogistics(stock, x, y) {
-    for (const item of Object.keys(stock)) {
-      let left = stock[item];
-      if (left <= 0) { delete stock[item]; continue; }
-      for (const b of this.game.map.buildings.values()) {
-        if (left <= 0) break;
-        if (b.type === 'chest') left = this.game.tryChestAdd(b, item, left);
-      }
-      if (left > 0) this.game.map.pileAdd(x, y, item, left);
-      delete stock[item];
-    }
-  }
+  refundToLogistics(stock, x, y) { refundToLogistics(this.game, stock, x, y); }
 
   /** 计划完工：剩余预留建材返还，移出列表 */
   finish(p) {
@@ -1116,6 +1107,10 @@ function plannedItems(e) {
 /**
  * 全局建材预算池：tick 初盘点全图自由建材（箱子→地面堆），
  * take 时同步物理取出（预留即移出物流，机械臂/调度不可再取）。
+ *
+ * 施工与维修共用同一套「统一自由物料池」语义：FG.Maintenance 也通过
+ * FG.Construction.MaterialPool 盘点备件，保证维修工单与施工计划对全图
+ * 自由备件（箱子/地面堆）的口径完全一致、预留即移出物流。
  */
 class MaterialPool {
   constructor(game) {
@@ -1175,4 +1170,25 @@ class MaterialPool {
     return got;
   }
 }
+
+/**
+ * 把预留库存返还物流（施工/维修共用）：优先放回箱子，放不下的落到 (x,y) 地面堆。
+ * 遍历后逐项清空 stock（与 Construction#refundToLogistics 同一实现）。
+ */
+function refundToLogistics(game, stock, x, y) {
+  for (const item of Object.keys(stock)) {
+    let left = stock[item];
+    if (left <= 0) { delete stock[item]; continue; }
+    for (const b of game.map.buildings.values()) {
+      if (left <= 0) break;
+      if (b.type === 'chest') left = game.tryChestAdd(b, item, left);
+    }
+    if (left > 0) game.map.pileAdd(x, y, item, left);
+    delete stock[item];
+  }
+}
+
+// 施工与维修共用的统一自由物料池 / 返还物流入口
+FG.Construction.MaterialPool = MaterialPool;
+FG.Construction.refundToLogistics = (game, stock, x, y) => refundToLogistics(game, stock, x, y);
 

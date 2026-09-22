@@ -254,9 +254,25 @@
       }
       if (tr.cargo.length) html += `<div class="tt-row">${tr.cargo.slice(0, 4).map(s => FG.Items.byId(s.type).name + '×' + s.count).join('、')}${tr.cargo.length > 4 ? '…' : ''}</div>`;
     } else if (b) {
-      const st = { working: '生产中/流动', starving: '缺料', blocked: '堵塞', idle: '闲置', empty: '枯竭' };
+      const st = { working: '生产中/流动', starving: '缺料', blocked: '堵塞', idle: '闲置', empty: '枯竭', broken: '故障停机', repairing: '检修中' };
       html += `<div class="tt-title">${b.def.name}</div>`;
       html += `<div class="tt-row">状态：<b>${st[b.status] || b.status}</b></div>`;
+      // 设备磨损 / 维修工单
+      if (b.broken && game.maintenance) {
+        const o = game.maintenance.orderAt(b.x, b.y);
+        if (o) {
+          const cost = game.maintenance.partsOf(b);
+          const parts = Object.keys(cost).map(k =>
+            `${FG.Items.byId(k).name} ${Math.min(o.stock[k] || 0, cost[k])}/${cost[k]}`).join(' · ');
+          html += `<div class="tt-row">维修：<b style="color:${o.repairTimer > 0 ? '#7fc7ff' : '#e05c5c'}">`
+            + (o.repairTimer > 0 ? '检修中 ' + Math.ceil(o.repairTimer / 20) + 's' : (o.waiting ? '缺备件' : '备件已齐'))
+            + `</b> · ${parts || '免备件'}</div>`;
+        } else {
+          html += `<div class="tt-row">磨损故障：等待生成维修工单</div>`;
+        }
+      } else if (game.maintenance && FG.Maintenance.wears(b) && (b.wear || 0) > 0) {
+        html += `<div class="tt-row">磨损 <b>${(game.maintenance.wearFraction(b) * 100).toFixed(0)}%</b></div>`;
+      }
       if (b.recipe) {
         const r = FG.Recipes.byId(b.recipe);
         const p = Math.min(1, b.progress / r.time);

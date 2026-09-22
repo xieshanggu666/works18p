@@ -9,7 +9,7 @@ FG.Panels = (() => {
   const tabsEl = () => document.getElementById('sp-tabs');
   const bodyEl = () => document.getElementById('sp-body');
 
-  const STATUS_NAMES = { working: '生产中', starving: '缺料', blocked: '堵塞', idle: '闲置', empty: '枯竭' };
+  const STATUS_NAMES = { working: '生产中', starving: '缺料', blocked: '堵塞', idle: '闲置', empty: '枯竭', broken: '故障停机', repairing: '检修中' };
 
   function init() {
     for (const b of tabsEl().querySelectorAll('button')) {
@@ -29,6 +29,7 @@ FG.Panels = (() => {
     FG.Events.on('blueprint:change', () => { if (activeTab === 'build') render(); });
     FG.Events.on('contracts:change', () => { if (activeTab === 'contract' || activeTab === 'info') render(); });
     FG.Events.on('contracts:complete', () => { render(); });
+    FG.Events.on('maintenance:change', () => { if (activeTab === 'repair' || activeTab === 'info' || activeTab === 'build') render(); });
     FG.Events.on('message', () => { if (activeTab === 'log') render(); });
   }
 
@@ -37,6 +38,7 @@ FG.Panels = (() => {
     if (activeTab === 'info') renderInfo();
     else if (activeTab === 'stats') renderStats();
     else if (activeTab === 'build') renderBuild();
+    else if (activeTab === 'repair') renderRepair();
     else if (activeTab === 'contract') renderContract();
     else if (activeTab === 'log') renderLog();
     bindActions();
@@ -55,6 +57,7 @@ FG.Panels = (() => {
           <div class="k">列车</div><div class="v">${ry ? ry.trains.length : 0}</div>
           <div class="k">火车站</div><div class="v">${ry ? ry.stationList().length : 0}</div>
           <div class="k">供货合同</div><div class="v">${game.contracts ? game.contracts.active.length : 0}</div>
+          <div class="k">维修工单</div><div class="v" style="${game.maintenance && game.maintenance.orders.length ? 'color:var(--red)' : ''}">${game.maintenance ? game.maintenance.orders.length : 0}</div>
           <div class="k">已研究</div><div class="v">${game.research.completed.size} / ${FG.Research.list().length}</div>
           <div class="k">游戏时间</div><div class="v">${FG.Utils.fmtTime(game.playTime)}</div>
         </div>
@@ -124,6 +127,9 @@ FG.Panels = (() => {
         <div style="font-size:11px;color:var(--text-dim);margin-top:4px;line-height:1.5">
           料源紧张时高优先级产线先得料，同优先级轮转均分；在途货物自动预留，在带面上以青色环标记。</div></div>`;
     }
+
+    // 设备磨损与维修（矿机 + 配方建筑）
+    if (FG.Maintenance.wears(b)) h += maintenanceInfo(b);
 
     // 配方选择
     if (b.def.recipeBuilding) {
@@ -240,6 +246,109 @@ FG.Panels = (() => {
     return `<div class="slot-row${warn ? ' slot-warn' : ''}" title="${warn ? '当前配方不再需要，机械臂会将其运走' : ''}"><span class="sl-name">${name}</span>
       <div class="sl-bar"><div class="fill" style="width:${Math.min(100, s.count / s.cap * 100).toFixed(0)}%"></div></div>
       <span class="sl-count">${FG.Utils.fmtNum(s.count)}/${FG.Utils.fmtNum(s.cap)}</span></div>`;
+  }
+
+  // ================= 设备磨损与维修 =================
+  const REPAIR_STATUS = { broken: '故障停机', repairing: '检修中', waiting: '缺备件等待' };
+
+  /** 单个设备的磨损 / 故障 / 工单信息（信息页） */
+  function maintenanceInfo(b) {
+    const mt = FG.game.maintenance;
+    const o = mt.orderAt(b.x, b.y);
+    if (o) {
+      const cost = mt.partsOf(b);
+      const parts = Object.keys(cost).map(k =>
+        `${FG.Items.byId(k).name} ${Math.min(o.stock[k] || 0, cost[k])}/${cost[k]}`);
+      const st = o.repairTimer > 0 ? '检修中（' + Math.ceil(o.repairTimer / 20) + 's）'
+        : (o.waiting ? '缺备件停机' : '备件已齐·待检修');
+      const stCls = o.repairTimer > 0 ? 'st-stage' : 'st-blocked';
+      const p = orderReadyFrac(o, cost);
+      return `<div class="panel-sec"><h4>🔧 维修工单 <span class="plan-st ${stCls}">${st}</span></h4>
+        <div class="progress-bar"><div class="fill" style="width:${(p * 100).toFixed(1)}%;background:${o.repairTimer > 0 ? '#7fc7ff' : '#e05c5c'}"></div></div>
+        <div style="font-size:11px;color:var(--text-dim);margin:3px 0">备件：${parts.join(' · ') || '免备件'}（按优先级从箱子/地面堆预留）</div>
+        <div class="prio-row" style="margin:4px 0">
+          ${[['high', '高'], ['normal', '中'], ['low', '低']].map(([id, nm]) =>
+            `<button class="prio-btn prio-${id} ${o.priority === id ? 'active' : ''}" data-order-prio="${o.id}:${id}">${nm}</button>`).join('')}
+        </div>
+        <div class="action-row" style="margin-top:2px">
+          <button data-order-cancel="${o.id}" class="danger">取消工单（返还备件）</button>
+        </div></div>`;
+    }
+    const frac = mt.wearFraction(b);
+    const col = frac > 0.8 ? '#e05c5c' : frac > 0.5 ? '#e8a33d' : '#58c26f';
+    return `<div class="panel-sec"><h4>磨损</h4>
+      <div class="progress-bar"><div class="fill" style="width:${(frac * 100).toFixed(1)}%;background:${col}"></div></div>
+      <div style="font-size:11px;color:var(--text-dim);margin-top:3px">
+        运转磨损 ${(frac * 100).toFixed(0)}%${frac > 0.8 ? ' · <b style="color:#e05c5c">即将故障停机</b>' : ''}<br>
+        故障后自动生成维修工单，按优先级从物流预留备件，停机检修后恢复生产。</div></div>`;
+  }
+
+  /** 工单备件齐备比例 0~1（进度条用） */
+  function orderReadyFrac(o, cost) {
+    const keys = Object.keys(cost);
+    if (!keys.length) return 1;
+    let have = 0, need = 0;
+    for (const k of keys) { have += Math.min(o.stock[k] || 0, cost[k]); need += cost[k]; }
+    return need ? have / need : 1;
+  }
+
+  /** 右侧「维修」页：全部进行中的维修工单（按优先级排序） */
+  function renderRepair() {
+    const game = FG.game, mt = game.maintenance;
+    let h = `<div class="panel-sec"><h4>维修工单（${mt.orders.length}）</h4>`;
+    if (!mt.orders.length) {
+      h += `<div style="color:var(--text-dim);font-size:11px;line-height:1.7">
+        矿机、熔炉、组装机等生产设备随运转积累磨损，到达寿命会<b style="color:var(--red)">故障停机</b>并自动生成维修工单。<br>
+        工单按<b>优先级</b>从箱子 / 地面物料堆预留备件（与施工共用统一物料池，高优先级先取料）；
+        备件凑齐后停机检修 ${Math.round(FG.Config.MAINT_REPAIR_TICKS / 20)} 秒即恢复生产。<br>
+        取消工单 / 拆除 / 升级设备时，未用备件返还物流。当前设备运转正常。</div>`;
+    }
+    const orderRank = { high: 0, normal: 1, low: 2 };
+    const sorted = mt.orders.slice().sort((a, c) => orderRank[a.priority] - orderRank[c.priority]);
+    for (const o of sorted) {
+      const b = game.map.buildingAt(o.x, o.y);
+      const def = b ? b.def : (FG.Buildings.byId(o.type) || { name: '已拆除' });
+      const cost = b ? mt.partsOf(b) : {};
+      const parts = Object.keys(cost).map(k =>
+        `${FG.Items.byId(k).name} ${Math.min(o.stock[k] || 0, cost[k])}/${cost[k]}`);
+      const repairing = o.repairTimer > 0;
+      const stTxt = repairing ? '🔧 检修中 ' + Math.ceil(o.repairTimer / 20) + 's'
+        : (o.waiting ? '缺备件停机' : '备件已齐');
+      const stCls = repairing ? 'st-stage' : 'st-blocked';
+      const p = orderReadyFrac(o, cost);
+      h += `<div class="bp-plan">
+        <div class="bp-head"><span>${b ? '🏭 ' : '⚠ '}${def.name}（${o.x},${o.y}）</span>
+          <span class="plan-st ${stCls}">${stTxt}</span></div>
+        <div class="progress-bar"><div class="fill" style="width:${(p * 100).toFixed(1)}%;background:${repairing ? '#7fc7ff' : '#e05c5c'}"></div></div>
+        <div style="font-size:11px;color:var(--text-dim)">备件：${parts.join(' · ') || '免备件'}</div>
+        <div class="prio-row" style="margin:4px 0">
+          ${[['high', '高优先'], ['normal', '普通'], ['low', '低优先']].map(([id, nm]) =>
+            `<button class="prio-btn prio-${id} ${o.priority === id ? 'active' : ''}" data-order-prio="${o.id}:${id}">${nm}</button>`).join('')}
+        </div>
+        <div class="action-row" style="margin-top:2px">
+          ${b ? `<button data-order-select="${o.id}">定位设备</button>` : ''}
+          <button data-order-cancel="${o.id}" class="danger">取消并返还备件</button>
+        </div>
+      </div>`;
+    }
+    h += `</div>`;
+    bodyEl().innerHTML = h;
+    for (const el of bodyEl().querySelectorAll('[data-order-prio]')) {
+      el.onclick = () => {
+        const [id, pri] = el.dataset.orderPrio.split(':');
+        mt.setPriority(id, pri);
+      };
+    }
+    for (const el of bodyEl().querySelectorAll('[data-order-cancel]')) {
+      el.onclick = () => mt.cancel(el.dataset.orderCancel);
+    }
+    for (const el of bodyEl().querySelectorAll('[data-order-select]')) {
+      el.onclick = () => {
+        const o = mt.byId(el.dataset.orderSelect);
+        const b = o && game.map.buildingAt(o.x, o.y);
+        if (b) { game.selectBuilding(b); activeTab = 'info'; render(); }
+      };
+    }
   }
 
   // ================= 供货合同 =================
@@ -978,6 +1087,16 @@ FG.Panels = (() => {
     const sel = game.selection;
     if (sel && sel.isTrain) bindTrainActions(sel);
     bindContractActions();
+    // 维修工单（信息页内嵌工单的优先级 / 取消）
+    for (const el of document.querySelectorAll('[data-order-prio]')) {
+      el.onclick = () => {
+        const [id, pri] = el.dataset.orderPrio.split(':');
+        game.maintenance.setPriority(id, pri);
+      };
+    }
+    for (const el of document.querySelectorAll('[data-order-cancel]')) {
+      el.onclick = () => game.maintenance.cancel(el.dataset.orderCancel);
+    }
 
     const btn = document.getElementById('btn-demolish');
     if (btn) btn.onclick = () => {
