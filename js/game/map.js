@@ -103,6 +103,10 @@ FG.Map = class {
       // 统计
       totalCrafted: 0,
       craftedByItem: {},    // 按产物分项的累计完成次数（试产闸门按产物归属统计，切配方不串计）
+      // 设备磨损与维修（预测性维护；null/undefined=该设备尚未启用磨损统计）
+      wear: null,
+      wearLimit: null,
+      broken: false,
     };
     if (def.storage) {
       for (let i = 0; i < FG.Config.CHEST_SLOTS; i++) b.chest.push({ type: null, count: 0, cap: FG.Config.CHEST_SLOT_CAP });

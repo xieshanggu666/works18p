@@ -71,6 +71,12 @@ FG.Research = (() => {
       cost: { science2: 40, science3: 30 }, prereq: ['oilProcessing', 'advancedElectronics'],
       unlocksB: ['chemPlant'], unlocksR: ['craft:science3'],
     },
+    predictiveMaintenance: {
+      id: 'predictiveMaintenance', name: '预测性维护', col: 3, row: 2,
+      desc: '设备随运转积累磨损，磨损满后故障停机；可在维修车间按优先级预留备件，生成维修工单，停机检修后恢复生产。解锁备件配方。',
+      cost: { science1: 30, science2: 30 }, prereq: ['advancedElectronics'],
+      unlocksB: [], unlocksR: ['craft:sparePart'],
+    },
     rocketTech: {
       id: 'rocketTech', name: '火箭科技', col: 5, row: 1,
       desc: '解锁火箭部件与火箭燃料配方。',

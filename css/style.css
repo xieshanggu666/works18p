@@ -207,6 +207,7 @@ button.danger:hover { background: #4d2c2c; }
 .info-grid .v.status-starving { color: var(--red); font-weight: 600; }
 .info-grid .v.status-blocked { color: var(--orange); font-weight: 600; }
 .info-grid .v.status-idle { color: var(--text-dim); }
+.info-grid .v.status-broken { color: var(--red); font-weight: 700; }
 
 .progress-bar { height: 10px; background: #10131a; border-radius: 5px; overflow: hidden; margin: 6px 0; }
 .progress-bar .fill { height: 100%; background: linear-gradient(90deg, var(--green), #8fdc9c); transition: width .15s; }

@@ -628,6 +628,24 @@ FG.Renderer = (() => {
       ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
     }
 
+    // 故障覆盖层（红色闪烁警示，优先于状态高亮）
+    if (b.broken) {
+      const blink = Math.floor(performance.now() / 300) % 2 === 0;
+      ctx.fillStyle = blink ? 'rgba(224,70,70,0.55)' : 'rgba(224,70,70,0.3)';
+      ctx.fillRect(px + 1, py + 1, t - 2, t - 2);
+      // 扳手徽标
+      ctx.font = '11px sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('🛠', cx, cy);
+      ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+    } else if (game.maintenance && game.maintenance.enabled
+               && game.maintenance.wearsOut(b) && game.maintenance.wearRatio(b) >= C().WEAR_WARN) {
+      // 高磨损黄角标
+      const ratio = game.maintenance.wearRatio(b);
+      ctx.fillStyle = ratio >= 0.95 ? '#e05c5c' : '#e8a33d';
+      ctx.beginPath(); ctx.arc(px + 5, py + 5, 3, 0, Math.PI * 2); ctx.fill();
+    }
+
     // 状态覆盖层
     if (game.showStatus && b.status) {
       const col = b.status === 'starving' ? C().COLORS.overlayRed

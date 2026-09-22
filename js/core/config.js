@@ -5,7 +5,7 @@
 window.FG = window.FG || {};
 
 FG.Config = {
-  VERSION: '1.9.0',
+  VERSION: '1.10.0',
 
   // 仿真节拍：每秒 20 tick
   TPS: 20,
@@ -54,6 +54,16 @@ FG.Config = {
   BP_MAX_AREA: 400,              // 框选蓝图的最大格数
   CONSTRUCT_BUILD_INTERVAL: 4,   // 施工计划相邻两栋建筑落成的 tick 间隔
   STAGE_TRIAL_COUNT: 3,          // 阶段「试产达标」默认需要的完成生产次数
+
+  // 设备磨损与维修
+  WEAR_PER_CYCLE: 1,             // 每完成一个生产周期积累的磨损量
+  WEAR_FAIL_MIN: 100,            // 故障阈值下限（周期数，100% 磨损）
+  WEAR_FAIL_MAX: 160,            // 故障阈值上限：各设备在区间内随机取固定寿命
+  WEAR_WARN: 0.7,                // 磨损预警比例（面板/悬浮提示标黄）
+  REPAIR_TIME_TICKS: 40,         // 备件齐备后的停机检修时长（2 仿真秒）
+  REPAIR_SPARES_BASE: 1,         // 维修工单备件需求基数
+  REPAIR_SPARES_PER_TIER: 1,     // 设备每高一个等级额外备件数（石炉1 → 钢炉2）
+  REPAIR_TIER_START: { high: 0, normal: 0, low: 0 }, // 同级轮转游标（每 tick 重置）
 
   // 一键流水线
   PIPELINE_SEARCH_RADIUS: 40,    // 智能选位螺旋搜索半径（格）

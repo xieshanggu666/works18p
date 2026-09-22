@@ -84,9 +84,10 @@ FG.Scheduler = class Scheduler {
     this.consumerByKey.set(c.key, c);
   }
 
-  /** 消费者目标缓冲 {item: 目标库存含在途}；无配方/无研究返回 null */
+  /** 消费者目标缓冲 {item: 目标库存含在途}；无配方/无研究/故障停机返回 null */
   wantsOf(b) {
     const out = {};
+    if (b.broken) return null;   // 故障停机检修：不参与按需物流，缺口不开、在途预留由标签 TTL/拆建设备释放
     if (b.def.recipeBuilding) {
       if (!b.recipe) return null;
       if (!this.game.research.isRecipeUnlocked(b.recipe)) return null;
@@ -107,8 +108,9 @@ FG.Scheduler = class Scheduler {
     const tag = item.tag;
     if (!tag) return;
     const c = this.consumerByKey.get(tag.c);
-    if (!c || !c.want[tag.item] || this.tick - (tag.t0 || 0) > FG.Config.RESV_TTL) {
-      delete item.tag; // 消费者已拆/换配方/预留超时：释放为自由货物
+    // 消费者已拆/换配方/故障停机/预留超时：剥离标签释放为自由货物（维修期间不继续向其供料）
+    if (!c || c.b.broken || !c.want[tag.item] || this.tick - (tag.t0 || 0) > FG.Config.RESV_TTL) {
+      delete item.tag;
       return;
     }
     item._seen = true; // 已被本次 rebuild 统计，持货臂 swing 中途不重复/不漏算

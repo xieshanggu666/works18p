@@ -17,6 +17,7 @@ FG.Recipes = (() => {
     'craft:advCircuit': { id: 'craft:advCircuit', name: '高级电路板', building: 'assembler', time: 32, ingredients: [{ item: 'circuit', count: 1 }, { item: 'copperWire', count: 4 }], results: [{ item: 'advCircuit', count: 1 }], unlockedBy: 'advancedElectronics' },
     'craft:ironBeam':   { id: 'craft:ironBeam',   name: '铁梁',   building: 'assembler', time: 20, ingredients: [{ item: 'ironPlate', count: 2 }], results: [{ item: 'ironBeam', count: 1 }], unlockedBy: 'steelSmelting' },
     'craft:engine':     { id: 'craft:engine',     name: '发动机', building: 'assembler', time: 45, ingredients: [{ item: 'gear', count: 1 }, { item: 'ironPlate', count: 2 }, { item: 'steelPlate', count: 1 }], results: [{ item: 'engine', count: 1 }], unlockedBy: 'logisticsScience' },
+    'craft:sparePart':  { id: 'craft:sparePart',  name: '备件', building: 'assembler', time: 20, ingredients: [{ item: 'gear', count: 1 }, { item: 'ironPlate', count: 1 }], results: [{ item: 'sparePart', count: 1 }], unlockedBy: 'predictiveMaintenance' },
 
     // ============ 科学包 ============
     'craft:science1': { id: 'craft:science1', name: '自动化科学包', building: 'assembler', time: 30, ingredients: [{ item: 'gear', count: 1 }, { item: 'ironPlate', count: 1 }, { item: 'copperPlate', count: 1 }], results: [{ item: 'science1', count: 1 }] },

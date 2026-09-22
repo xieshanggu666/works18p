@@ -78,8 +78,7 @@ FG.Sim = class Sim {
     for (const b of this.belts) {
       if (!b.items.length) { b.status = 'idle'; continue; }
       const spd = b.def.beltSpeed;
-      for (const it of b.items) it.pos += spd;
-      b.items.sort((a, c) => beltArcLen(b, a) - beltArcLen(b, c));
+      for (const it of b.items) it.pos += spd;      b.items.sort((a, c) => beltArcLen(b, a) - beltArcLen(b, c));
       for (let k = b.items.length - 1; k >= 0; k--) {
         b.items[k].pos = Math.min(b.items[k].pos, 1);
         if (k < b.items.length - 1) {
@@ -358,12 +357,17 @@ FG.Sim = class Sim {
   // ================= 流体生产（水泵/抽油机） =================
   updateFluidProducers() {
     for (const b of this.fluidProducers) {
+      if (b.broken) { b.status = 'broken'; continue; }   // 故障停机检修：不抽液、不推流
       const item = b.type === 'pump' ? 'water' : 'crudeOil';
       const cap = FG.Config.FLUID_TANK_CAP;
       const tank = b.fluidTanks[item] || 0;
       if (tank < cap) b.fluidTanks[item] = Math.min(cap, tank + b.def.fluidRate / FG.Config.TPS);
       const sent = this.pushFluid(b, item);
       b.status = (sent === 0 && (b.fluidTanks[item] || 0) >= cap - 0.1) ? 'blocked' : 'working';
+      // 水泵/抽油机持续运转：每仿真秒（20 tick）记一个磨损周期；堵塞/故障不积累
+      if (b.status === 'working' && this.game.tickCount % FG.Config.TPS === 0) {
+        this.game.maintenance.noteCycle(b);
+      }
     }
   }
 
@@ -428,6 +432,7 @@ FG.Sim = class Sim {
   // ================= 生产建筑 =================
   updateCrafters() {
     for (const b of this.crafters) {
+      if (b.broken) { b.status = 'broken'; continue; }   // 故障停机：等待维修工单检修
       const recipe = b.recipe ? FG.Recipes.byId(b.recipe) : null;
       if (!recipe) { b.status = 'idle'; b.progress = 0; continue; }
       if (!this.game.research.isRecipeUnlocked(recipe.id)) { b.status = 'idle'; b.progress = 0; continue; }
@@ -513,6 +518,7 @@ FG.Sim = class Sim {
         stats.recordProduce(r.item, r.count);
       }
       b.totalCrafted++;
+      this.game.maintenance.noteCycle(b);   // 完成一个生产周期：积累磨损（故障后由维修恢复）
     }
     this.pushOutputs(b, recipe);
   }
@@ -530,6 +536,7 @@ FG.Sim = class Sim {
   updateMiners() {
     const m = this.game.map;
     for (const b of this.miners) {
+      if (b.broken) { b.status = 'broken'; continue; }   // 故障停机：等待维修工单检修
       const ore = m.ores[b.y][b.x];
       if (!ore || ore.amount <= 0) { b.status = 'empty'; b.progress = 0; b.oreType = null; continue; }
       b.oreType = ore.type;
@@ -548,6 +555,7 @@ FG.Sim = class Sim {
         b.totalCrafted++;
         // 按矿种分项记账（矿机产物固定为所在矿脉矿种，仍按项记录以统一试产统计口径）
         b.craftedByItem[ore.type] = (b.craftedByItem[ore.type] || 0) + 1;
+        this.game.maintenance.noteCycle(b);   // 完成一次采矿周期：积累磨损
       }
     }
   }
@@ -556,6 +564,7 @@ FG.Sim = class Sim {
   updateLabs() {
     const mgr = this.game.research;
     for (const b of this.labs) {
+      if (b.broken) { b.status = 'broken'; continue; }   // 故障停机：等待维修工单检修
       const tech = mgr.current;
       if (!tech) { b.status = 'idle'; b.consumeCounter = 0; continue; }
       b.consumeCounter++;
@@ -577,6 +586,7 @@ FG.Sim = class Sim {
         mgr.addPoints(pack, 1);
       }
       b.status = 'working';
+      this.game.maintenance.noteCycle(b);   // 完成一次科研消耗周期：积累磨损
     }
   }
 };

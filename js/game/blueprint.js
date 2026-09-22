@@ -804,6 +804,8 @@ FG.Construction = class Construction {
     }
     g.map.register(b);
     g.sim.register(b);   // 接入生产调度：纳入每 tick 调度/传送带/机械臂/生产更新
+    // 预测性维护：施工落成的新设备从全新状态开始积累磨损
+    if (g.maintenance && g.maintenance.enabled) g.maintenance.initWear(b);
     if (b.type === 'rail' || b.def.railStation) g.railway.markDirty();
     if (e.recipe && b.def.recipeBuilding && g.research.isRecipeUnlocked(e.recipe)) {
       b.recipe = e.recipe;
@@ -841,6 +843,10 @@ FG.Construction = class Construction {
     nb.priority = old.priority;
     nb.totalCrafted = old.totalCrafted;
     nb.craftedByItem = Object.assign({}, old.craftedByItem || {});   // 分项产量随升级迁移，试产基线不断档
+    // 磨损状态随原地升级迁移：高级型号不翻新设备，磨损/故障与工单无缝衔接
+    nb.wear = old.wear;
+    nb.wearLimit = old.wearLimit;
+    nb.broken = !!old.broken;
     g.sim.unregister(old);
     g.map.unregister(old);
     g.map.register(nb);
@@ -848,6 +854,8 @@ FG.Construction = class Construction {
     if (nb.def.recipeBuilding) FG.Map.syncRecipeSlots(nb);
     if (g.selection === old) g.selection = nb;   // 选中态跟随新建筑
     g.absorbPile(nb);                    // 回收该格地面物料（如取消返还落在旧建筑脚下的建材）
+    // 维修工单衔接：故障设备升级后工单迁移到新建筑（备件需求按新型号重算，多退少补）
+    if (g.maintenance) g.maintenance.onUpgraded(old, nb);
     FG.Events.emit('building:placed', nb);
     return nb;
   }

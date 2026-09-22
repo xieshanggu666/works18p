@@ -254,9 +254,21 @@
       }
       if (tr.cargo.length) html += `<div class="tt-row">${tr.cargo.slice(0, 4).map(s => FG.Items.byId(s.type).name + '×' + s.count).join('、')}${tr.cargo.length > 4 ? '…' : ''}</div>`;
     } else if (b) {
-      const st = { working: '生产中/流动', starving: '缺料', blocked: '堵塞', idle: '闲置', empty: '枯竭' };
+      const st = { working: '生产中/流动', starving: '缺料', blocked: '堵塞', idle: '闲置', empty: '枯竭', broken: '故障停机' };
       html += `<div class="tt-title">${b.def.name}</div>`;
-      html += `<div class="tt-row">状态：<b>${st[b.status] || b.status}</b></div>`;
+      html += `<div class="tt-row">状态：<b${b.status === 'broken' ? ' style="color:#e05c5c"' : ''}>${st[b.status] || b.status}</b></div>`;
+      if (game.maintenance && game.maintenance.enabled && game.maintenance.wearsOut(b)) {
+        if (b.broken) {
+          const o = game.maintenance.orderAt(b.x, b.y);
+          html += `<div class="tt-row" style="color:#e05c5c">🛠 故障：${o
+            ? '工单 ' + o.id + ' · 备件 ' + (o.stock.sparePart || 0) + '/' + o.need
+              + (o.state === 'repairing' ? ' · 检修中' : o.waiting ? ' · 缺件等待' : '')
+            : '工单已取消，可在信息页重新报修'}</div>`;
+        } else {
+          const pct = Math.round(game.maintenance.wearRatio(b) * 100);
+          html += `<div class="tt-row">磨损 <b style="color:${pct >= 95 ? '#e05c5c' : pct >= 70 ? '#e8a33d' : 'inherit'}">${pct}%</b></div>`;
+        }
+      }
       if (b.recipe) {
         const r = FG.Recipes.byId(b.recipe);
         const p = Math.min(1, b.progress / r.time);

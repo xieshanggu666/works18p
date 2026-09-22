@@ -21,6 +21,7 @@ FG.Items = (() => {
     circuit:      { name: '电路板', color: '#5fbf5f', shape: 'board',   fluid: false, cat: 'part' },
     advCircuit:   { name: '高级电路板', color: '#3ec9c0', shape: 'board', fluid: false, cat: 'part' },
     engine:       { name: '发动机', color: '#b0483f', shape: 'engine',  fluid: false, cat: 'part' },
+    sparePart:    { name: '备件', color: '#c9a24f', shape: 'gear', fluid: false, cat: 'part' },
     // ---------- 科学包 ----------
     science1: { name: '自动化科学包', color: '#d94f4f', shape: 'flask', fluid: false, cat: 'science' },
     science2: { name: '物流科学包',   color: '#5fbf5f', shape: 'flask', fluid: false, cat: 'science' },

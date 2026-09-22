@@ -10,6 +10,7 @@ FG.Game = class Game {
     this.research = new FG.ResearchMgr(this);
     this.railway = new FG.Railway(this);   // 铁路货运：轨网/列车/调度状态
     this.contracts = new FG.Contracts(this); // 供货合同：接单/锁付/逾期/奖励
+    this.maintenance = new FG.Maintenance(this); // 设备磨损：故障工单/备件预留/停机检修
     this.speed = 1;
     this.paused = false;
     this.tickCount = 0;
@@ -57,6 +58,7 @@ FG.Game = class Game {
     this.research = new FG.ResearchMgr(this);
     this.railway = new FG.Railway(this);
     this.contracts = new FG.Contracts(this);
+    this.maintenance = new FG.Maintenance(this);
     this.tickCount = 0;
     this.playTime = 0;
     this.simAcc = 0;
@@ -109,6 +111,8 @@ FG.Game = class Game {
         rr: b.rr, filter: b.filter, demandMode: b.demandMode,
         priority: b.priority, status: b.status,
         stationId: b.stationId || null, stationName: b.stationName || null,
+        // 设备磨损与故障（预测性维护；旧档无字段 → 不磨损/不故障）
+        wear: b.wear, wearLimit: b.wearLimit, broken: !!b.broken,
       });
     }
     const ores = this.map.ores.map(row => row.map(c => c ? { type: c.type, amount: c.amount } : null));
@@ -137,6 +141,7 @@ FG.Game = class Game {
       blueprint: this.blueprint,                     // 蓝图剪贴板
       railway: this.railway.serialize(),             // 列车/运输计划/调度状态（含在途货物）
       contracts: this.contracts.serialize(),         // 供货合同（锁付台账/邀约/期限/奖励）
+      maintenance: this.maintenance.serialize(),     // 磨损寿命/维修工单（备件预留/检修计时/归档）
       meta: { playTime: this.playTime, name: this.saveInfo.name, startDate: this.saveInfo.startDate },
     };
   }
@@ -187,6 +192,10 @@ FG.Game = class Game {
       b.status = sb.status || 'idle';
       b.stationId = sb.stationId || null;
       b.stationName = sb.stationName || null;
+      // 设备磨损：旧档无字段 → 缺省（由 maintenance.deserialize 补寿命、不故障）
+      b.wear = (typeof sb.wear === 'number') ? sb.wear : null;
+      b.wearLimit = (typeof sb.wearLimit === 'number') ? sb.wearLimit : null;
+      b.broken = !!sb.broken;
       // 旧存档箱子槽位补齐
       if (b.def.storage) {
         while (b.chest.length < FG.Config.CHEST_SLOTS) b.chest.push({ type: null, count: 0, cap: FG.Config.CHEST_SLOT_CAP });
@@ -217,6 +226,8 @@ FG.Game = class Game {
     this.railway.deserialize(data.railway || null);
     // 供货合同：锁付台账/邀约/期限随档恢复（锁付货物不进站货位，无物理库存需重建）
     this.contracts.deserialize(data.contracts || null);
+    // 设备磨损与维修工单（设备 wear/broken 已随建筑读入；旧档无字段按科技状态回退）
+    this.maintenance.deserialize(data.maintenance || null);
     // 读回的一键流水线蓝图恢复来源标记（bpMode 不持久化，需重新进入放置预览）
     this.pipelineId = (this.blueprint && this.blueprint.fromPreset) || null;
     this.logMsg('存档已载入', 'info');
@@ -274,6 +285,7 @@ FG.Game = class Game {
   tickOnce() {
     this.sim.tick();
     this.construction.tick();   // 施工计划：备料 → 落成
+    this.maintenance.tick();    // 维修工单：按优先级预留备件 → 停机检修 → 恢复生产
     this.railway.tick();        // 铁路：区间占用 → 行驶 → 停站装卸（卸货锁付合同货物）
     this.contracts.tick();      // 供货合同：逾期检查（锁付货物在卸货事件中即时结算）
     this.tickCount++;
@@ -343,6 +355,8 @@ FG.Game = class Game {
     this.sim.register(b);
     // 轨网变更（轨道/车站接入）→ 下一 tick 重建路网图并重寻路
     if (b.type === 'rail' || b.def.railStation) this.railway.markDirty();
+    // 预测性维护已开启：新设备从全新状态开始积累磨损
+    if (this.maintenance && this.maintenance.enabled) this.maintenance.initWear(b);
     // 若该格有拆除时遗留的地面物料，优先回收进新建筑（在途物品不丢失）
     this.absorbPile(b);
     FG.Events.emit('building:placed', b);
@@ -408,6 +422,8 @@ FG.Game = class Game {
     }
     // 交付站拆除：终止其供货合同，锁付货物落到该格地面堆（与下方拆除物料一并保留）
     if (this.contracts && b.def && b.def.delivery) this.contracts.onStationRemoved(b);
+    // 维修工单拆除联动：未消耗的预留备件落到该格地面堆，工单出列（在物料落地前调用）
+    if (this.maintenance) this.maintenance.onBuildingRemoved(b);
     // 物料保留：传送带上的在途物品、手中物品、槽位与箱子物料全部落到该格地面堆
     // 拆建即释放预留：落地前剥离在途预留标签，物料恢复为自由货物可被任何产线取用
     if (b.items) for (const it of b.items) this.map.pileAdd(b.x, b.y, it.type, 1);

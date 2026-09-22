@@ -78,6 +78,11 @@ FG.ResearchMgr = class ResearchMgr {
       const rd = FG.Recipes.byId(r);
       this.game.logMsg('🔓 解锁配方：' + rd.name, 'unlock');
     }
+    // 预测性维护：开启全图设备磨损积累（既有设备从此刻起计磨损，不回溯）
+    if (t.id === 'predictiveMaintenance' && this.game.maintenance) {
+      this.game.maintenance.enable();
+      this.game.logMsg('🔧 设备将随运转积累磨损，故障后自动生成维修工单（按优先级预留备件）', 'unlock');
+    }
     this.game.logMsg('✅ 研究完成：' + t.name, 'unlock');
     FG.Events.emit('research:complete', t);
   }

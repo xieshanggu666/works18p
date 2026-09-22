@@ -9,7 +9,7 @@ FG.Panels = (() => {
   const tabsEl = () => document.getElementById('sp-tabs');
   const bodyEl = () => document.getElementById('sp-body');
 
-  const STATUS_NAMES = { working: '生产中', starving: '缺料', blocked: '堵塞', idle: '闲置', empty: '枯竭' };
+  const STATUS_NAMES = { working: '生产中', starving: '缺料', blocked: '堵塞', idle: '闲置', empty: '枯竭', broken: '故障停机' };
 
   function init() {
     for (const b of tabsEl().querySelectorAll('button')) {
@@ -29,6 +29,9 @@ FG.Panels = (() => {
     FG.Events.on('blueprint:change', () => { if (activeTab === 'build') render(); });
     FG.Events.on('contracts:change', () => { if (activeTab === 'contract' || activeTab === 'info') render(); });
     FG.Events.on('contracts:complete', () => { render(); });
+    FG.Events.on('maintenance:change', () => { if (activeTab === 'repair' || activeTab === 'info') render(); });
+    FG.Events.on('maintenance:breakdown', () => { if (activeTab === 'repair' || activeTab === 'info') render(); });
+    FG.Events.on('maintenance:repaired', () => { render(); });
     FG.Events.on('message', () => { if (activeTab === 'log') render(); });
   }
 
@@ -37,6 +40,7 @@ FG.Panels = (() => {
     if (activeTab === 'info') renderInfo();
     else if (activeTab === 'stats') renderStats();
     else if (activeTab === 'build') renderBuild();
+    else if (activeTab === 'repair') renderRepair();
     else if (activeTab === 'contract') renderContract();
     else if (activeTab === 'log') renderLog();
     bindActions();
@@ -55,6 +59,7 @@ FG.Panels = (() => {
           <div class="k">列车</div><div class="v">${ry ? ry.trains.length : 0}</div>
           <div class="k">火车站</div><div class="v">${ry ? ry.stationList().length : 0}</div>
           <div class="k">供货合同</div><div class="v">${game.contracts ? game.contracts.active.length : 0}</div>
+          <div class="k">待修设备</div><div class="v" style="${game.maintenance && game.maintenance.orders.length ? 'color:var(--red)' : ''}">${game.maintenance ? game.maintenance.orders.length : 0}</div>
           <div class="k">已研究</div><div class="v">${game.research.completed.size} / ${FG.Research.list().length}</div>
           <div class="k">游戏时间</div><div class="v">${FG.Utils.fmtTime(game.playTime)}</div>
         </div>
@@ -123,6 +128,11 @@ FG.Panels = (() => {
         </div>
         <div style="font-size:11px;color:var(--text-dim);margin-top:4px;line-height:1.5">
           料源紧张时高优先级产线先得料，同优先级轮转均分；在途货物自动预留，在带面上以青色环标记。</div></div>`;
+    }
+
+    // 设备磨损与维修（预测性维护）
+    if (game.maintenance && game.maintenance.enabled && game.maintenance.wearsOut(b)) {
+      h += maintenanceInfo(b);
     }
 
     // 配方选择
@@ -429,6 +439,165 @@ FG.Panels = (() => {
       <button id="btn-remove-train" class="danger">解编（货落地）</button>
       <button id="btn-clear">取消选择</button></div>`;
     return h;
+  }
+
+  // ================= 设备磨损与维修工单 =================
+  const MO_PRIO_NAMES = { high: '高优先', normal: '普通', low: '低优先' };
+
+  function maintenanceInfo(b) {
+    const mo = FG.game.maintenance;
+    const ratio = mo.wearRatio(b);
+    const pct = Math.round(ratio * 100);
+    const warn = ratio >= FG.Config.WEAR_WARN;
+    let h = `<div class="panel-sec"><h4>磨损与维修</h4>`;
+    if (b.broken) {
+      const o = mo.orderAt(b.x, b.y);
+      h += `<div style="color:var(--red);font-weight:600;margin-bottom:4px">🛠 故障停机：等待维修</div>`;
+      if (o) {
+        const have = o.stock.sparePart || 0;
+        const stateTxt = o.upgrading ? '设备升级中（暂停备料）'
+          : o.state === 'repairing' ? '停机检修中…'
+          : o.waiting ? '缺备件等待' : '备件已齐备，待检修';
+        h += `<div class="info-grid">
+          <div class="k">工单</div><div class="v">${o.id} · ${MO_PRIO_NAMES[o.priority]}</div>
+          <div class="k">状态</div><div class="v" style="color:var(--orange)">${stateTxt}</div>
+          <div class="k">备件</div><div class="v">${have}/${o.need}</div>
+        </div>`;
+        if (o.state === 'repairing') {
+          const rp = 1 - o.repairTimer / FG.Config.REPAIR_TIME_TICKS;
+          h += `<div class="progress-bar" style="margin-top:4px"><div class="fill" style="width:${(rp * 100).toFixed(0)}%"></div></div>`;
+        } else {
+          h += `<div class="progress-bar" style="margin-top:4px"><div class="fill" style="width:${Math.min(100, have / o.need * 100).toFixed(0)}%;background:var(--orange)"></div></div>`;
+        }
+        h += `<div class="prio-row" style="margin-top:5px">
+          ${[['high', '高'], ['normal', '中'], ['low', '低']].map(([id, nm]) =>
+            `<button class="prio-btn prio-${id} ${o.priority === id ? 'active' : ''}" data-mo-prio="${o.id}:${id}">${nm}</button>`).join('')}
+        </div>
+        <div class="action-row" style="margin-top:4px">
+          <button data-mo-cancel="${o.id}" class="danger">取消工单（返还备件）</button>
+        </div>`;
+      } else {
+        h += `<div style="font-size:11px;color:var(--text-dim);line-height:1.6;margin-bottom:4px">
+          工单已取消，设备仍停机。备件由组装机生产（齿轮×1+铁板×1）。</div>
+        <div class="action-row"><button data-mo-report>重新报修（生成工单）</button></div>`;
+      }
+    } else {
+      h += `<div class="info-grid">
+        <div class="k">磨损</div><div class="v" style="${warn ? 'color:var(--orange)' : ''}">${pct}%</div>
+      </div>
+      <div class="progress-bar" style="margin-top:3px"><div class="fill" style="width:${pct}%;background:${warn ? 'var(--orange)' : 'var(--green)'}"></div></div>
+      <div style="font-size:11px;color:var(--text-dim);margin-top:3px">磨损满后故障停机，自动生成维修工单，按优先级预留备件检修。</div>`;
+    }
+    h += `</div>`;
+    return h;
+  }
+
+  /** 右侧「维修」页：全部维修工单（按优先级）+ 备件库存 + 高磨损设备 + 归档记录 */
+  function renderRepair() {
+    const game = FG.game, mo = game.maintenance;
+    let h = '';
+    if (!mo.enabled) {
+      h += `<div class="panel-sec"><h4>🔧 预测性维护</h4>
+        <div style="color:var(--text-dim);font-size:11px;line-height:1.8">
+          在科技树研究「<b style="color:var(--accent2)">预测性维护</b>」（前置：高级电子学）后开启：<br>
+          · 生产设备随运转积累磨损，磨损满后<b style="color:var(--red)">故障停机</b>并自动生成维修工单；<br>
+          · 工单按<b>高/中/低优先级</b>从全图物流（箱子/地面堆）预留<b>备件</b>，同级轮转公平；<br>
+          · 备件齐备后停机检修 2 秒，更换备件、磨损清零、恢复生产；<br>
+          · 取消工单或拆除设备返还未用备件；设备升级衔接工单状态；全部状态随存档保存。</div></div>`;
+      bodyEl().innerHTML = h;
+      return;
+    }
+
+    // 备件全图库存
+    const inv = game.inventory();
+    const spareN = inv.sparePart || 0;
+    h += `<div class="panel-sec"><h4>备件库存：<span style="color:var(--accent2)">${FG.Utils.fmtNum(spareN)}</span></h4>
+      <div style="color:var(--text-dim);font-size:11px;line-height:1.6">
+        备件由<b>组装机</b>生产（齿轮×1 + 铁板×1），经传送带/箱子接入全图物流。<br>
+        故障工单自动从箱子/地面堆按优先级预留备件，预留即移出物流。</div></div>`;
+
+    // 进行中工单
+    const order = { high: 0, normal: 1, low: 2 };
+    const sorted = mo.orders.slice().sort((a, b2) => order[a.priority] - order[b2.priority]);
+    h += `<div class="panel-sec"><h4>维修工单（${mo.orders.length}）</h4>`;
+    if (!mo.orders.length) {
+      h += `<div style="color:var(--text-dim);font-size:11px">暂无故障设备，产线运转正常</div>`;
+    }
+    for (const o of sorted) {
+      const b = game.map.buildingAt(o.x, o.y);
+      const have = o.stock.sparePart || 0;
+      const stTxt = o.upgrading ? { t: '升级中挂起', c: 'st-blocked' }
+        : o.state === 'repairing' ? { t: '检修中', c: 'st-active' }
+        : o.waiting ? { t: '缺备件', c: 'st-waiting' }
+        : { t: '待检修', c: 'st-stage' };
+      h += `<div class="bp-plan">
+        <div class="bp-head">
+          <span title="${o.id}">🛠 ${b ? b.def.name : '设备已拆除'}（${o.x},${o.y}）</span>
+          <span class="plan-st ${stTxt.c}">${stTxt.t}</span>
+        </div>
+        <div class="progress-bar"><div class="fill" style="width:${Math.min(100, have / o.need * 100).toFixed(1)}%;background:${o.state === 'repairing' ? 'var(--green)' : 'var(--orange)'}"></div></div>
+        <div style="font-size:11px;color:var(--text-dim)">备件 ${have}/${o.need}${o.state === 'repairing' ? ' · 停机检修中' : ''}${o.upgrading ? ' · 设备升级中，暂停备料（不占料）' : ''}</div>
+        <div class="prio-row plan-prio">
+          ${[['high', '高'], ['normal', '中'], ['low', '低']].map(([id, nm]) =>
+            `<button class="prio-btn prio-${id} ${o.priority === id ? 'active' : ''}" data-mo-prio="${o.id}:${id}">${nm}</button>`).join('')}
+        </div>
+        <div class="action-row">
+          <button data-mo-select="${o.x}:${o.y}">定位设备</button>
+          <button data-mo-cancel="${o.id}" class="danger">取消（返还备件）</button>
+        </div>
+      </div>`;
+    }
+    h += `</div>`;
+
+    // 高磨损设备（预警）
+    const warns = [];
+    for (const b of game.map.buildings.values()) {
+      if (!mo.wearsOut(b) || b.broken) continue;
+      if (mo.wearRatio(b) >= FG.Config.WEAR_WARN) warns.push(b);
+    }
+    warns.sort((a, b2) => mo.wearRatio(b2) - mo.wearRatio(a));
+    h += `<div class="panel-sec"><h4>高磨损预警（${warns.length}）</h4>`;
+    if (!warns.length) h += `<div style="color:var(--text-dim);font-size:11px">暂无磨损超过 ${Math.round(FG.Config.WEAR_WARN * 100)}% 的设备</div>`;
+    for (const b of warns.slice(0, 12)) {
+      const pct = Math.round(mo.wearRatio(b) * 100);
+      h += `<div class="slot-row"><span class="sl-name">${b.def.name}（${b.x},${b.y}）</span>
+        <div class="sl-bar"><div class="fill" style="width:${pct}%;background:var(--orange)"></div></div>
+        <span class="sl-count">${pct}%</span></div>`;
+    }
+    h += `</div>`;
+
+    // 归档记录
+    if (mo.archived.length) {
+      h += `<div class="panel-sec"><h4>维修记录（${mo.archived.length}）</h4>`;
+      const STATE_TXT = { done: '✅ 已修复', canceled: '取消', demolished: '设备拆除' };
+      for (const a of mo.archived.slice(0, 10)) {
+        h += `<div class="slot-row"><span class="sl-name">${STATE_TXT[a.state] || a.state} · ${a.name}（${a.x},${a.y}）</span>
+          <span style="color:var(--text-dim);font-size:11px">${a.id} · ${FG.Utils.fmtTime(a.at || 0)}</span></div>`;
+      }
+      h += `</div>`;
+    }
+    bodyEl().innerHTML = h;
+
+    for (const el of bodyEl().querySelectorAll('[data-mo-prio]')) {
+      el.onclick = () => {
+        const [id, pri] = el.dataset.moPrio.split(':');
+        mo.setPriority(id, pri);
+      };
+    }
+    for (const el of bodyEl().querySelectorAll('[data-mo-cancel]')) {
+      el.onclick = () => mo.cancel(el.dataset.moCancel);
+    }
+    for (const el of bodyEl().querySelectorAll('[data-mo-select]')) {
+      el.onclick = () => {
+        const [x, y] = el.dataset.moSelect.split(':').map(Number);
+        const b = game.map.buildingAt(x, y);
+        if (b) {
+          game.selectBuilding(b);
+          activeTab = 'info';
+          render();
+        }
+      };
+    }
   }
 
   // ================= 统计 =================
@@ -954,6 +1123,26 @@ FG.Panels = (() => {
     }
   }
 
+  /** 设备信息页内的维修工单操作（优先级/取消/重新报修） */
+  function bindMaintenanceActions() {
+    const mo = FG.game.maintenance;
+    if (!mo) return;
+    for (const el of document.querySelectorAll('[data-mo-prio]')) {
+      el.onclick = () => {
+        const [id, pri] = el.dataset.moPrio.split(':');
+        mo.setPriority(id, pri);
+      };
+    }
+    for (const el of document.querySelectorAll('[data-mo-cancel]')) {
+      el.onclick = () => mo.cancel(el.dataset.moCancel);
+    }
+    const rep = document.querySelector('[data-mo-report]');
+    if (rep) rep.onclick = () => {
+      const b = FG.game.selection;
+      if (b) mo.report(b);
+    };
+  }
+
   function bindActions() {
     const game = FG.game;
     // 火车站改名
@@ -978,6 +1167,7 @@ FG.Panels = (() => {
     const sel = game.selection;
     if (sel && sel.isTrain) bindTrainActions(sel);
     bindContractActions();
+    bindMaintenanceActions();
 
     const btn = document.getElementById('btn-demolish');
     if (btn) btn.onclick = () => {
